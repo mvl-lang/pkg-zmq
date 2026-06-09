@@ -4,6 +4,13 @@ All notable changes to pkg-zmq will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] - 2026-06-09
+
+### Changed
+- Adapt to MVL `String.byte_at` API change: now returns `Option[Byte]` instead of `Byte` (#1263)
+- All 53 `byte_at(i).to_int()` call sites updated to `byte_at(i).unwrap_or(from_int(0)).to_int()`
+- Bumped `requires-mvl` to `>=0.190.0`
+
 ## [0.1.0] - 2026-05-31
 
 ### Added
