@@ -4,6 +4,15 @@ All notable changes to pkg-zmq will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.0] - 2026-06-18
+
+### Added
+- Makefile: `coverage` target — `mvl test src/ --coverage` for behavioral branch coverage report
+- Makefile: `version` target — prints current version from `mvl.toml`
+- `.openspec/adr/0001-zmtp-wire-framing.md` — ADR documenting ZMTP 3.x wire protocol design (4-byte length prefix, greeting structure, frame flags, READY handshake)
+- `.openspec/adr/0002-ifc-taint-design.md` — ADR documenting IFC/taint label strategy (ZMQ-RECV, ZMQ-FRAME-PARSE, ZMQ-SUB-FILTER, ZMTP-PARSE)
+- `.openspec/adr/0003-totality-policy.md` — ADR documenting totality policy (actor loops legitimately partial; ZMTP helpers total)
+
 ## [0.2.0] - 2026-06-09
 
 ### Changed

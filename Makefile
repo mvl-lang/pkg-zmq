@@ -1,5 +1,5 @@
 # pkg-zmq -- ZeroMQ-style messaging patterns
-.PHONY: help check test test-integration sync-check prove assurance clean
+.PHONY: help check test test-integration sync-check prove assurance coverage version clean
 
 .DEFAULT_GOAL := help
 
@@ -40,6 +40,12 @@ prove: ## Prove correctness: assurance report with prover verdicts
 	$(MVL) assurance $(DIR)src/ --verbose
 
 assurance: check sync-check prove ## Full pipeline: check + sync-check + prove
+
+coverage: guard-mvl ## Run tests with behavioral branch coverage report
+	$(MVL) test $(DIR)src/ --coverage
+
+version: ## Show current package version from mvl.toml
+	@grep '^version' mvl.toml | sed 's/version *= *"\(.*\)"/\1/'
 
 clean: ## Remove build artifacts
 	rm -rf $(TMPDIR)mvl_build_zmq
