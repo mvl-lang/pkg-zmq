@@ -16,28 +16,38 @@
 //      context-specific audit tag before use in security-sensitive operations.
 //
 // See #1032, #1047.
-
 use std.ifc.{Tainted}
+
 use std.net.{TcpListener, TcpStream, NetError,
              tcp_connect, tcp_accept, tcp_read, tcp_write,
              tcp_close_listener, tcp_close_stream}
+
 use pkg.zmq.{ZmqError, encode_frame, decode_frame, map_net_err,
              zmq_bind, is_transient_accept_error}
+
 use pkg.zmq.zmtp.{ZmtpSocketType, zmtp_handshake_server, zmtp_handshake_client,
                    zmtp_recv_message, zmtp_send_message}
 
 // ── Server-side ───────────────────────────────────────────────────────────────
-
 /// Write a framed request on `stream`, read the framed reply, and close.
 ///
 /// Module-private — used by `req_request`.
-total fn req_exchange(stream: TcpStream, msg: String) -> Result[Tainted[String], ZmqError] ! Net {
+total fn req_exchange(
+    stream: TcpStream,
+    msg: String,
+) -> Result[Tainted[String], ZmqError] ! Net {
     let framed: String = encode_frame(msg);
     match tcp_write(stream, framed) {
-        Err(e) => { tcp_close_stream(stream); Err(map_net_err(e)) },
-        Ok(_)  => {
+        Err(e) => {
+            tcp_close_stream(stream);
+            Err(map_net_err(e))
+        },
+        Ok(_) => {
             match tcp_read(stream) {
-                Err(e)  => { tcp_close_stream(stream); Err(map_net_err(e)) },
+                Err(e) => {
+                    tcp_close_stream(stream);
+                    Err(map_net_err(e))
+                },
                 Ok(raw) => {
                     tcp_close_stream(stream);
                     decode_frame(raw)
@@ -57,7 +67,7 @@ total fn handle_one(
     handler: fn(Tainted[String]) -> String,
 ) -> Result[Unit, ZmqError] ! Net {
     match tcp_read(stream) {
-        Err(e)  => {
+        Err(e) => {
             tcp_close_stream(stream);
             Err(map_net_err(e))
         },
@@ -71,8 +81,14 @@ total fn handle_one(
                     let reply_body: String = handler(msg);
                     let framed: String = encode_frame(reply_body);
                     match tcp_write(stream, framed) {
-                        Ok(_)  => { tcp_close_stream(stream); Ok(()) },
-                        Err(e) => { tcp_close_stream(stream); Err(map_net_err(e)) },
+                        Ok(_) => {
+                            tcp_close_stream(stream);
+                            Ok(())
+                        },
+                        Err(e) => {
+                            tcp_close_stream(stream);
+                            Err(map_net_err(e))
+                        },
                     }
                 },
             }
@@ -94,7 +110,7 @@ partial fn rep_accept_loop(
             Err(e) => {
                 if !is_transient_accept_error(e) {
                     tcp_close_listener(listener);
-                    return Ok(())
+                    return Ok(());
                 }
             },
             Ok(stream) => {
@@ -116,13 +132,12 @@ pub partial fn rep_serve(
     handler: fn(Tainted[String]) -> String,
 ) -> Result[Unit, ZmqError] ! Net {
     match zmq_bind(addr) {
-        Err(e)       => Err(e),
+        Err(e) => Err(e),
         Ok(listener) => rep_accept_loop(listener, handler),
     }
 }
 
 // ── Client-side ───────────────────────────────────────────────────────────────
-
 /// Send a REQ message to `host:port` and receive the REP reply.
 ///
 /// Connects, sends a framed request, reads the framed reply, closes.
@@ -133,7 +148,7 @@ pub total fn req_request(
     msg: String,
 ) -> Result[Tainted[String], ZmqError] ! Net {
     match tcp_connect(host, port) {
-        Err(e)     => Err(map_net_err(e)),
+        Err(e) => Err(map_net_err(e)),
         Ok(stream) => req_exchange(stream, msg),
     }
 }
@@ -143,7 +158,6 @@ pub total fn req_request(
 // Wire-compatible with pyzmq, zmq.go, cppzmq and any ZMTP 3.x implementation.
 // Each accepted connection performs a full ZMTP handshake before entering the
 // request/reply loop.  The connection stays open across multiple exchanges.
-
 /// Handle ZMTP exchanges on a single persistent connection.
 ///
 /// After handshake, loops: read request → handler → send reply.
@@ -156,16 +170,16 @@ partial fn zmtp_exchange_loop(
         match zmtp_recv_message(stream) {
             Err(_) => {
                 tcp_close_stream(stream);
-                return Ok(())
+                return Ok(());
             },
             Ok(msg) => {
                 let reply_body: String = handler(msg);
                 match zmtp_send_message(stream, reply_body) {
                     Err(_) => {
                         tcp_close_stream(stream);
-                        return Ok(())
+                        return Ok(());
                     },
-                    Ok(_) => {},
+                    Ok(_) => { },
                 }
             },
         }
@@ -196,7 +210,7 @@ partial fn rep_zmtp_accept_loop(
             Err(e) => {
                 if !is_transient_accept_error(e) {
                     tcp_close_listener(listener);
-                    return Ok(())
+                    return Ok(());
                 }
             },
             Ok(stream) => {
@@ -217,7 +231,7 @@ pub partial fn rep_serve_zmtp(
     handler: fn(Tainted[String]) -> String,
 ) -> Result[Unit, ZmqError] ! Net {
     match zmq_bind(addr) {
-        Err(e)       => Err(e),
+        Err(e) => Err(e),
         Ok(listener) => rep_zmtp_accept_loop(listener, handler),
     }
 }

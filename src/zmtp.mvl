@@ -15,13 +15,13 @@
 //                      zmtp_recv_message, zmtp_send_message}
 //
 // See #1047.
-
 use std.ifc.{Tainted}
+
 use std.net.{TcpStream, NetError, tcp_read_exact, tcp_write}
+
 use pkg.zmq.{ZmqError, map_net_err}
 
 // ── Socket types ─────────────────────────────────────────────────────────────
-
 /// ZMTP socket types for the READY command metadata.
 pub type ZmtpSocketType = enum {
     Req,
@@ -35,10 +35,10 @@ pub type ZmtpSocketType = enum {
 /// Return the wire name of a socket type (e.g. "REQ", "REP").
 pub total fn socket_type_name(st: val ZmtpSocketType) -> String {
     match st {
-        ZmtpSocketType::Req  => "REQ",
-        ZmtpSocketType::Rep  => "REP",
-        ZmtpSocketType::Pub  => "PUB",
-        ZmtpSocketType::Sub  => "SUB",
+        ZmtpSocketType::Req => "REQ",
+        ZmtpSocketType::Rep => "REP",
+        ZmtpSocketType::Pub => "PUB",
+        ZmtpSocketType::Sub => "SUB",
         ZmtpSocketType::Push => "PUSH",
         ZmtpSocketType::Pull => "PULL",
     }
@@ -64,7 +64,6 @@ total fn parse_socket_type(name: String) -> Result[ZmtpSocketType, ZmqError] {
 }
 
 // ── Byte helpers ─────────────────────────────────────────────────────────────
-
 /// Create a single-byte string from an integer value (0–255).
 total fn bval(n: Int where self >= 0 && self <= 255) -> String {
     String::from_bytes([from_int(n.bit_and(255))])
@@ -72,41 +71,39 @@ total fn bval(n: Int where self >= 0 && self <= 255) -> String {
 
 /// 8 zero bytes.
 total fn zeros_8() -> String {
-    String::from_bytes([from_int(0), from_int(0), from_int(0), from_int(0),
-                        from_int(0), from_int(0), from_int(0), from_int(0)])
+    String::from_bytes([from_int(0), from_int(0), from_int(0), from_int(0), from_int(0), from_int(0), from_int(0), from_int(0)])
 }
 
 /// 16 zero bytes.
-total fn zeros_16() -> String {
-    zeros_8().concat(zeros_8())
-}
+total fn zeros_16() -> String { zeros_8().concat(zeros_8()) }
 
 /// 15 zero bytes.
 total fn zeros_15() -> String {
-    String::from_bytes([from_int(0), from_int(0), from_int(0), from_int(0),
-                        from_int(0), from_int(0), from_int(0), from_int(0),
-                        from_int(0), from_int(0), from_int(0), from_int(0),
-                        from_int(0), from_int(0), from_int(0)])
+    String::from_bytes([from_int(0), from_int(0), from_int(0), from_int(0), from_int(0), from_int(0), from_int(0), from_int(0), from_int(0), from_int(0), from_int(0), from_int(0), from_int(0), from_int(0), from_int(0)])
 }
 
 /// 31 zero bytes.
-total fn zeros_31() -> String {
-    zeros_16().concat(zeros_15())
-}
+total fn zeros_31() -> String { zeros_16().concat(zeros_15()) }
 
 /// Read exactly `n` bytes from stream, detaint for protocol parsing.
-total fn read_bytes(stream: TcpStream, n: Int) -> Result[String, ZmqError] ! Net {
+total fn read_bytes(
+    stream: TcpStream,
+    n: Int,
+) -> Result[String, ZmqError] ! Net {
     match tcp_read_exact(stream, n) {
-        Err(e)  => Err(map_net_err(e)),
+        Err(e) => Err(map_net_err(e)),
         Ok(raw) => Ok(relabel trust(raw, "ZMTP-PARSE")),
     }
 }
 
 /// Write bytes to stream, mapping NetError to ZmqError.
-total fn write_bytes(stream: TcpStream, data: String) -> Result[Unit, ZmqError] ! Net {
+total fn write_bytes(
+    stream: TcpStream,
+    data: String,
+) -> Result[Unit, ZmqError] ! Net {
     match tcp_write(stream, data) {
         Err(e) => Err(map_net_err(e)),
-        Ok(_)  => Ok(()),
+        Ok(_) => Ok(()),
     }
 }
 
@@ -117,21 +114,22 @@ total fn write_bytes(stream: TcpStream, data: String) -> Result[Unit, ZmqError] 
 // Bytes 12–31: Mechanism  "NULL" + 16 zero bytes
 // Byte  32:    as-server  0x00 (client) or 0x01 (server)
 // Bytes 33–63: Filler     31 zero bytes
-
 /// Build the 64-byte ZMTP greeting.
 total fn make_greeting(as_server: Bool) -> String {
-    // Signature: 0xFF + 8 zeros + 0x7F (10 bytes)
     let sig: String = bval(255).concat(zeros_8()).concat(bval(127));
-    // Version: 3.1 (2 bytes)
     let ver: String = bval(3).concat(bval(1));
-    // Mechanism: "NULL" + 16 zeros (20 bytes)
     let mech: String = "NULL".concat(zeros_16());
-    // as-server: 1 byte
-    let as_srv: String = if as_server { bval(1) } else { bval(0) };
-    // Filler: 31 zeros
+    let as_srv: String = if as_server {
+        bval(1)
+    } else { bval(0) };
     sig.concat(ver).concat(mech).concat(as_srv).concat(zeros_31())
 }
 
+// Signature: 0xFF + 8 zeros + 0x7F (10 bytes)
+// Version: 3.1 (2 bytes)
+// Mechanism: "NULL" + 16 zeros (20 bytes)
+// as-server: 1 byte
+// Filler: 31 zeros
 /// Validate a received 64-byte ZMTP greeting.
 ///
 /// Checks: signature bytes, version >= 3.x, mechanism = NULL.
@@ -161,22 +159,19 @@ total fn validate_greeting(g: String) -> Result[Unit, ZmqError] {
 //   [1-byte key-length][key][4-byte BE value-length][value]
 //
 // Required property: Socket-Type = "REQ" | "REP" | etc.
-
 /// Build the body of a READY command with Socket-Type metadata.
 total fn make_ready_body(st: ZmtpSocketType) -> String {
     let name: String = "READY";
     let name_len: String = bval(5);
-    // Socket-Type property
     let key: String = "Socket-Type";
     let key_len: String = bval(11);
     let stype: String = socket_type_name(st);
     let stype_len: Int = stype.len();
-    let stype_len_be: String = bval(0).concat(bval(0))
-        .concat(bval(stype_len.shift_right(8).bit_and(255)))
-        .concat(bval(stype_len.bit_and(255)));
+    let stype_len_be: String = bval(0).concat(bval(0)).concat(bval(stype_len.shift_right(8).bit_and(255))).concat(bval(stype_len.bit_and(255)));
     name_len.concat(name).concat(key_len).concat(key).concat(stype_len_be).concat(stype)
 }
 
+// Socket-Type property
 /// Parse the body of a READY command, extracting the peer's Socket-Type.
 partial fn parse_ready_body(body: String) -> Result[ZmtpSocketType, ZmqError] {
     let blen: Int = body.len();
@@ -198,7 +193,10 @@ partial fn parse_ready_body(body: String) -> Result[ZmtpSocketType, ZmqError] {
 }
 
 /// Scan properties starting at `offset` for "Socket-Type".
-partial fn parse_socket_type_property(body: String, offset: Int) -> Result[ZmtpSocketType, ZmqError] {
+partial fn parse_socket_type_property(
+    body: String,
+    offset: Int,
+) -> Result[ZmtpSocketType, ZmqError] {
     let blen: Int = body.len();
     if offset >= blen {
         Err(ZmqError::FrameError("no Socket-Type in READY"))
@@ -214,8 +212,7 @@ partial fn parse_socket_type_property(body: String, offset: Int) -> Result[ZmtpS
             let vl_b2: Int = body.byte_at(key_end + 1).unwrap_or(from_int(0)).to_int();
             let vl_b3: Int = body.byte_at(key_end + 2).unwrap_or(from_int(0)).to_int();
             let vl_b4: Int = body.byte_at(key_end + 3).unwrap_or(from_int(0)).to_int();
-            let vl: Int = vl_b1.shift_left(24) + vl_b2.shift_left(16)
-                + vl_b3.shift_left(8) + vl_b4;
+            let vl: Int = vl_b1.shift_left(24) + vl_b2.shift_left(16) + vl_b3.shift_left(8) + vl_b4;
             let vs: Int = key_end + 4;
             let ve: Int = vs + vl;
             if ve > blen {
@@ -241,7 +238,6 @@ partial fn parse_socket_type_property(body: String, offset: Int) -> Result[ZmtpS
 //     bit 2 (0x04): COMMAND — command frame (vs message frame)
 //   [size: 1 or 8 bytes, big-endian]
 //   [body: `size` bytes]
-
 /// Internal struct for a parsed frame.
 type ReadFrame = struct {
     body: String,
@@ -270,7 +266,9 @@ total fn read_frame_raw(stream: TcpStream) -> Result[ReadFrame, ZmqError] ! Net 
     if size < 0 || size > 67108864 {
         Err(ZmqError::FrameError("frame too large"))
     } else {
-        let body: String = if size == 0 { "" } else { read_bytes(stream, size)? };
+        let body: String = if size == 0 {
+            ""
+        } else { read_bytes(stream, size)? };
         Ok(ReadFrame { body: body, more: has_more, command: is_command })
     }
 }
@@ -283,25 +281,23 @@ total fn write_frame_raw(
     command: Bool,
 ) -> Result[Unit, ZmqError] ! Net {
     let body_len: Int = body.len();
-    let more_flag: Int = if more { 1 } else { 0 };
-    let long_flag: Int = if body_len > 255 { 2 } else { 0 };
-    let cmd_flag: Int = if command { 4 } else { 0 };
+    let more_flag: Int = if more {
+        1
+    } else { 0 };
+    let long_flag: Int = if body_len > 255 {
+        2
+    } else { 0 };
+    let cmd_flag: Int = if command {
+        4
+    } else { 0 };
     let flags: Int = more_flag.bit_or(long_flag).bit_or(cmd_flag);
     let header: String = if body_len > 255 {
-        bval(flags)
-            .concat(bval(0)).concat(bval(0)).concat(bval(0)).concat(bval(0))
-            .concat(bval(body_len.shift_right(24).bit_and(255)))
-            .concat(bval(body_len.shift_right(16).bit_and(255)))
-            .concat(bval(body_len.shift_right(8).bit_and(255)))
-            .concat(bval(body_len.bit_and(255)))
-    } else {
-        bval(flags).concat(bval(body_len))
-    };
+        bval(flags).concat(bval(0)).concat(bval(0)).concat(bval(0)).concat(bval(0)).concat(bval(body_len.shift_right(24).bit_and(255))).concat(bval(body_len.shift_right(16).bit_and(255))).concat(bval(body_len.shift_right(8).bit_and(255))).concat(bval(body_len.bit_and(255)))
+    } else { bval(flags).concat(bval(body_len)) };
     write_bytes(stream, header.concat(body))
 }
 
 // ── Handshake ────────────────────────────────────────────────────────────────
-
 /// Perform ZMTP 3.x handshake as server.
 ///
 /// 1. Send greeting (as-server=true)
@@ -352,7 +348,6 @@ pub partial fn zmtp_handshake_client(
 // ZMTP REQ/REP messages use an envelope:
 //   Frame 1: empty delimiter (body="", MORE=true)
 //   Frame 2: message body (MORE=false)
-
 /// Receive a ZMTP message from `stream`.
 ///
 /// Reads frames until a non-MORE frame is found, returning the final frame's
@@ -361,20 +356,22 @@ pub partial fn zmtp_recv_message(stream: TcpStream) -> Result[Tainted[String], Z
     while true {
         let frame: ReadFrame = read_frame_raw(stream)?;
         if frame.command {
-            // Handle PING heartbeat; skip other commands (SUBSCRIBE, READY, etc.)
             let _: Result[Unit, ZmqError] = handle_command(stream, frame.body);
-        } else if frame.more {
-            // Skip delimiter/MORE frames, continue to next
-        } else {
-            return Ok(relabel taint(frame.body, "ZMQ-RECV"))
+        } else if frame.more { } else {
+            return Ok(relabel taint(frame.body, "ZMQ-RECV"));
         }
     }
 }
 
+// Handle PING heartbeat; skip other commands (SUBSCRIBE, READY, etc.)
+// Skip delimiter/MORE frames, continue to next
 /// Send a ZMTP message on `stream`.
 ///
 /// Sends the standard REQ/REP envelope: empty delimiter frame + body frame.
-pub total fn zmtp_send_message(stream: TcpStream, body: String) -> Result[Unit, ZmqError] ! Net {
+pub total fn zmtp_send_message(
+    stream: TcpStream,
+    body: String,
+) -> Result[Unit, ZmqError] ! Net {
     write_frame_raw(stream, "", true, false)?;
     write_frame_raw(stream, body, false, false)
 }
@@ -382,11 +379,13 @@ pub total fn zmtp_send_message(stream: TcpStream, body: String) -> Result[Unit, 
 // ── Single-frame message API ────────────────────────────────────────────────
 //
 // PUSH/PULL and PUB/SUB use single-frame messages (no envelope delimiter).
-
 /// Send a single message frame without envelope delimiter.
 ///
 /// Used by PUSH/PULL and PUB/SUB patterns where no routing envelope is needed.
-pub total fn zmtp_send_body(stream: TcpStream, body: String) -> Result[Unit, ZmqError] ! Net {
+pub total fn zmtp_send_body(
+    stream: TcpStream,
+    body: String,
+) -> Result[Unit, ZmqError] ! Net {
     write_frame_raw(stream, body, false, false)
 }
 
@@ -395,11 +394,13 @@ pub total fn zmtp_send_body(stream: TcpStream, body: String) -> Result[Unit, Zmq
 // After handshake, SUB sends SUBSCRIBE command frames to register topic filters.
 // ZMTP 3.1 command: [name_len=9]["SUBSCRIBE"][topic-prefix]
 // ZMTP 3.0 message: [0x01][topic-prefix]  (fallback for older peers)
-
 /// Send a ZMTP 3.1 SUBSCRIBE command for the given topic prefix.
 ///
 /// Used by SUB clients after handshake. An empty topic subscribes to all messages.
-pub total fn zmtp_send_subscribe(stream: TcpStream, topic: String) -> Result[Unit, ZmqError] ! Net {
+pub total fn zmtp_send_subscribe(
+    stream: TcpStream,
+    topic: String,
+) -> Result[Unit, ZmqError] ! Net {
     let body: String = bval(9).concat("SUBSCRIBE").concat(topic);
     write_frame_raw(stream, body, false, true)
 }
@@ -418,27 +419,26 @@ pub partial fn zmtp_recv_subscribe(stream: TcpStream) -> Result[String, ZmqError
                 if name_len == 9 {
                     let name: String = body.substring(1, 10);
                     if name == "SUBSCRIBE" {
-                        return Ok(body.substring(10, body.len()))
+                        return Ok(body.substring(10, body.len()));
                     }
                 }
             }
         } else {
-            // ZMTP 3.0 fallback: message frame with 0x01 prefix = subscribe
             let body: String = frame.body;
             if body.len() >= 1 {
                 if body.byte_at(0).unwrap_or(from_int(0)).to_int() == 1 {
-                    return Ok(body.substring(1, body.len()))
+                    return Ok(body.substring(1, body.len()));
                 }
             }
         }
     }
 }
 
+// ZMTP 3.0 fallback: message frame with 0x01 prefix = subscribe
 // ── PING/PONG heartbeat (ZMTP 3.1) ─────────────────────────────────────────
 //
 // PING command body: [name_len=4]["PING"][2-byte TTL big-endian][context bytes]
 // PONG response body: [name_len=4]["PONG"][context bytes]  (echo context, no TTL)
-
 /// Check if a command frame body is a PING.
 total fn is_ping(body: String) -> Bool {
     if body.len() >= 5 {
@@ -463,7 +463,10 @@ total fn ping_context(body: String) -> String {
 }
 
 /// Handle an incoming command frame. Responds to PING with PONG; ignores others.
-total fn handle_command(stream: TcpStream, body: String) -> Result[Unit, ZmqError] ! Net {
+total fn handle_command(
+    stream: TcpStream,
+    body: String,
+) -> Result[Unit, ZmqError] ! Net {
     if is_ping(body) {
         let ctx: String = ping_context(body);
         let pong: String = bval(4).concat("PONG").concat(ctx);

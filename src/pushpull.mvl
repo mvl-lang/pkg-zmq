@@ -13,18 +13,19 @@
 // IFC: received messages are Tainted[String] (audit tag ZMQ-RECV).
 //
 // See #1032.
-
 use std.ifc.{Tainted}
+
 use std.net.{TcpListener, TcpStream, NetError,
              tcp_accept, tcp_read, tcp_connect,
              tcp_close_listener, tcp_close_stream}
+
 use pkg.zmq.{ZmqError, encode_frame, decode_frame, map_net_err,
              zmq_bind, send_one, is_transient_accept_error}
+
 use pkg.zmq.zmtp.{ZmtpSocketType, zmtp_handshake_server, zmtp_handshake_client,
                    zmtp_recv_message, zmtp_send_body}
 
 // ── Pusher actor ──────────────────────────────────────────────────────────────
-
 /// Pusher actor.  Distributes messages round-robin across a pool of workers.
 ///
 /// Register workers with `add_worker(addr)`, then distribute with `push(msg)`.
@@ -32,25 +33,19 @@ pub actor Pusher {
     workers: List[String]
     next: Int
 
-    /// Add a worker address ("host:port" or "tcp://host:port").
-    pub fn add_worker(val addr: String) {
+    pub fn add_worker(val addr: String) -> Unit {
         let ws: ref List[String] = self.workers;
         ws.push(addr);
-        self.workers = consume(ws)
+        self.workers = consume(ws);
     }
 
-    /// Push a message to the next worker (round-robin).
-    ///
-    /// Connects to the selected worker, writes a framed message, closes.
-    /// Network errors are silently ignored (fire-and-forget actor behavior).
-    /// The round-robin counter wraps modulo the worker count to prevent overflow.
     pub fn push(val msg: String) -> Unit ! Net {
         let n: Int = self.workers.len();
         if n > 0 {
             let idx: Int = self.next % n;
             self.next = (self.next + 1) % n;
             match self.workers.get(idx) {
-                None       => {},
+                None => { },
                 Some(addr) => {
                     let framed: String = encode_frame(msg);
                     let _: Result[Unit, ZmqError] = send_one(addr, framed);
@@ -60,18 +55,26 @@ pub actor Pusher {
     }
 }
 
+/// Add a worker address ("host:port" or "tcp://host:port").
+/// Push a message to the next worker (round-robin).
+///
+/// Connects to the selected worker, writes a framed message, closes.
+/// Network errors are silently ignored (fire-and-forget actor behavior).
+/// The round-robin counter wraps modulo the worker count to prevent overflow.
 // ── Puller-side ───────────────────────────────────────────────────────────────
-
 /// Accept one incoming PUSH message on `listener`.
 ///
 /// Blocks until a pusher connects and sends a framed message.
 /// Returns the message body as `Tainted[String]` (audit tag `ZMQ-RECV`).
 pub total fn puller_recv(listener: TcpListener) -> Result[Tainted[String], ZmqError] ! Net {
     match tcp_accept(listener) {
-        Err(e)     => Err(map_net_err(e)),
+        Err(e) => Err(map_net_err(e)),
         Ok(stream) => {
             match tcp_read(stream) {
-                Err(e)  => { tcp_close_stream(stream); Err(map_net_err(e)) },
+                Err(e) => {
+                    tcp_close_stream(stream);
+                    Err(map_net_err(e))
+                },
                 Ok(raw) => {
                     tcp_close_stream(stream);
                     decode_frame(raw)
@@ -90,7 +93,7 @@ pub partial fn puller_serve(
     handler: fn(Tainted[String]) -> Unit,
 ) -> Result[Unit, ZmqError] ! Net {
     match zmq_bind(addr) {
-        Err(e)       => Err(e),
+        Err(e) => Err(e),
         Ok(listener) => puller_accept_loop(listener, handler),
     }
 }
@@ -104,20 +107,20 @@ partial fn puller_accept_loop(
             Err(e) => {
                 if !is_transient_accept_error(e) {
                     tcp_close_listener(listener);
-                    return Ok(())
+                    return Ok(());
                 }
             },
             Ok(stream) => {
                 match tcp_read(stream) {
-                    Err(_)  => {
-                        tcp_close_stream(stream);
+                    Err(_) => {
+                        tcp_close_stream(stream)
                     },
                     Ok(raw) => {
                         tcp_close_stream(stream);
                         match decode_frame(raw) {
-                            Err(_)  => {},
+                            Err(_) => { },
                             Ok(msg) => {
-                                handler(msg);
+                                handler(msg)
                             },
                         }
                     },
@@ -131,7 +134,6 @@ partial fn puller_accept_loop(
 //
 // Wire-compatible with pyzmq, zmq.rs, cppzmq PUSH/PULL sockets.
 // PUSH connects, PULL binds.  Messages are single frames (no envelope).
-
 /// Handle ZMTP messages on a single persistent PULL connection.
 ///
 /// Loops: receive message → handler.  Returns when peer closes connection.
@@ -143,10 +145,10 @@ partial fn pull_zmtp_recv_loop(
         match zmtp_recv_message(stream) {
             Err(_) => {
                 tcp_close_stream(stream);
-                return Ok(())
+                return Ok(());
             },
             Ok(msg) => {
-                handler(msg);
+                handler(msg)
             },
         }
     }
@@ -176,7 +178,7 @@ partial fn pull_zmtp_accept_loop(
             Err(e) => {
                 if !is_transient_accept_error(e) {
                     tcp_close_listener(listener);
-                    return Ok(())
+                    return Ok(());
                 }
             },
             Ok(stream) => {
@@ -197,7 +199,7 @@ pub partial fn pull_serve_zmtp(
     handler: fn(Tainted[String]) -> Unit,
 ) -> Result[Unit, ZmqError] ! Net {
     match zmq_bind(addr) {
-        Err(e)       => Err(e),
+        Err(e) => Err(e),
         Ok(listener) => pull_zmtp_accept_loop(listener, handler),
     }
 }

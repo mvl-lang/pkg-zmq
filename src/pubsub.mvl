@@ -17,19 +17,20 @@
 // IFC: received payloads are Tainted[String] (audit tag ZMQ-RECV).
 //
 // See #1032.
-
 use std.ifc.{Tainted}
+
 use std.net.{TcpListener, TcpStream, NetError,
              tcp_accept, tcp_read, tcp_connect,
              tcp_close_listener, tcp_close_stream}
+
 use pkg.zmq.{ZmqError, encode_frame, decode_frame, map_net_err,
              zmq_bind, send_one, is_transient_accept_error}
+
 use pkg.zmq.zmtp.{ZmtpSocketType, zmtp_handshake_server, zmtp_handshake_client,
                    zmtp_recv_message, zmtp_send_body, zmtp_send_subscribe,
                    zmtp_recv_subscribe}
 
 // ── Publisher actor ───────────────────────────────────────────────────────────
-
 /// Publisher actor.  Maintains a list of subscriber addresses ("host:port").
 ///
 /// Register subscribers with `subscribe(addr)`, then broadcast with `publish(topic, msg)`.
@@ -37,18 +38,12 @@ use pkg.zmq.zmtp.{ZmtpSocketType, zmtp_handshake_server, zmtp_handshake_client,
 pub actor Publisher {
     subscribers: List[String]
 
-    /// Register a subscriber address ("host:port" or "tcp://host:port").
-    pub fn subscribe(val addr: String) {
+    pub fn subscribe(val addr: String) -> Unit {
         let subs: ref List[String] = self.subscribers;
         subs.push(addr);
-        self.subscribers = consume(subs)
+        self.subscribers = consume(subs);
     }
 
-    /// Broadcast a message to all registered subscribers.
-    ///
-    /// Wire format: framed "topic\nmessage".  Connects to each subscriber,
-    /// writes the framed payload, and closes — connection-per-message.
-    /// Network errors per subscriber are silently ignored.
     pub fn publish(val topic: String, val msg: String) -> Unit ! Net {
         let payload: String = encode_frame(topic.concat("\n").concat(msg));
         for addr in self.subscribers {
@@ -57,19 +52,27 @@ pub actor Publisher {
     }
 }
 
+/// Register a subscriber address ("host:port" or "tcp://host:port").
+/// Broadcast a message to all registered subscribers.
+///
+/// Wire format: framed "topic\nmessage".  Connects to each subscriber,
+/// writes the framed payload, and closes — connection-per-message.
+/// Network errors per subscriber are silently ignored.
 // ── Subscriber-side ───────────────────────────────────────────────────────────
-
 /// Returns true if the topic component of `plain` starts with `filter`.
 ///
 /// `plain` is the full decoded payload "topic\nmessage".  The filter is applied
 /// to the topic prefix only — the body is never matched against the filter.
 /// An empty `filter` matches all messages.
-total fn topic_passes_filter(plain: String, filter: String) -> Bool {
+total fn topic_passes_filter(
+    plain: String,
+    filter: String,
+) -> Bool {
     if filter.len() == 0 {
         true
     } else {
         let topic: String = match plain.find("\n") {
-            None    => plain.substring(0, plain.len()),
+            None => plain.substring(0, plain.len()),
             Some(i) => plain.substring(0, i),
         };
         topic.starts_with(filter)
@@ -90,20 +93,27 @@ pub partial fn sub_recv(
 ) -> Result[Tainted[String], ZmqError] ! Net {
     while true {
         match tcp_accept(listener) {
-            Err(NetError::ConnectionReset) => {},
-            Err(NetError::Timeout)         => {},
-            Err(e)                         => { return Err(map_net_err(e)) },
+            Err(NetError::ConnectionReset) => { },
+            Err(NetError::Timeout) => { },
+            Err(e) => {
+                return Err(map_net_err(e));
+            },
             Ok(stream) => {
                 match tcp_read(stream) {
-                    Err(e)  => { tcp_close_stream(stream); return Err(map_net_err(e)) },
+                    Err(e) => {
+                        tcp_close_stream(stream);
+                        return Err(map_net_err(e));
+                    },
                     Ok(raw) => {
                         tcp_close_stream(stream);
                         match decode_frame(raw) {
-                            Err(e)  => { return Err(e) },
+                            Err(e) => {
+                                return Err(e);
+                            },
                             Ok(msg) => {
                                 let plain: String = relabel trust(msg, "ZMQ-SUB-FILTER");
                                 if topic_passes_filter(plain, filter) {
-                                    return Ok(relabel taint(plain, "ZMQ-RECV"))
+                                    return Ok(relabel taint(plain, "ZMQ-RECV"));
                                 }
                             },
                         }
@@ -124,7 +134,7 @@ pub partial fn sub_serve(
     handler: fn(Tainted[String]) -> Unit,
 ) -> Result[Unit, ZmqError] ! Net {
     match zmq_bind(addr) {
-        Err(e)       => Err(e),
+        Err(e) => Err(e),
         Ok(listener) => sub_accept_loop(listener, filter, handler),
     }
 }
@@ -139,22 +149,22 @@ partial fn sub_accept_loop(
             Err(e) => {
                 if !is_transient_accept_error(e) {
                     tcp_close_listener(listener);
-                    return Ok(())
+                    return Ok(());
                 }
             },
             Ok(stream) => {
                 match tcp_read(stream) {
-                    Err(_)  => {
-                        tcp_close_stream(stream);
+                    Err(_) => {
+                        tcp_close_stream(stream)
                     },
                     Ok(raw) => {
                         tcp_close_stream(stream);
                         match decode_frame(raw) {
-                            Err(_)  => {},
+                            Err(_) => { },
                             Ok(msg) => {
                                 let plain: String = relabel trust(msg, "ZMQ-SUB-FILTER");
                                 if topic_passes_filter(plain, filter) {
-                                    handler(relabel taint(plain, "ZMQ-RECV"));
+                                    handler(relabel taint(plain, "ZMQ-RECV"))
                                 }
                             },
                         }
@@ -166,7 +176,6 @@ partial fn sub_accept_loop(
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
 /// Extract the topic from a PUB/SUB payload ("topic\nmessage" → "topic").
 ///
 /// IFC: strips `Tainted` with audit tag `ZMQ-SUB-TOPIC`.  The topic is
@@ -174,7 +183,7 @@ partial fn sub_accept_loop(
 pub total fn sub_topic(payload: Tainted[String]) -> String {
     let s: String = relabel trust(payload, "ZMQ-SUB-TOPIC");
     match s.find("\n") {
-        None    => s,
+        None => s,
         Some(i) => s.substring(0, i),
     }
 }
@@ -187,7 +196,7 @@ pub total fn sub_body(payload: Tainted[String]) -> Tainted[String] {
     let s: String = relabel trust(payload, "ZMQ-SUB-BODY");
     let slen: Int = s.len();
     let body: String = match s.find("\n") {
-        None    => "",
+        None => "",
         Some(i) => s.substring(i + 1, slen),
     };
     relabel taint(body, "ZMQ-SUB-BODY")
@@ -198,7 +207,6 @@ pub total fn sub_body(payload: Tainted[String]) -> Tainted[String] {
 // Wire-compatible with pyzmq, zmq.rs, cppzmq PUB/SUB sockets.
 // Standard model: PUB binds, SUB connects.
 // After handshake, SUB sends SUBSCRIBE command, then receives published messages.
-
 /// Receive loop for a ZMTP SUB connection.
 partial fn sub_zmtp_recv_loop(
     stream: TcpStream,
@@ -208,10 +216,10 @@ partial fn sub_zmtp_recv_loop(
         match zmtp_recv_message(stream) {
             Err(_) => {
                 tcp_close_stream(stream);
-                return Ok(())
+                return Ok(());
             },
             Ok(msg) => {
-                handler(msg);
+                handler(msg)
             },
         }
     }
@@ -264,7 +272,6 @@ partial fn handle_pub_zmtp(
             Ok(())
         },
         Ok(_) => {
-            // Read the SUB command from subscriber
             match zmtp_recv_subscribe(stream) {
                 Err(_) => {
                     tcp_close_stream(stream);
@@ -280,6 +287,7 @@ partial fn handle_pub_zmtp(
     }
 }
 
+// Read the SUB command from subscriber
 /// Accept loop for the ZMTP PUB server.
 partial fn pub_zmtp_accept_loop(
     listener: TcpListener,
@@ -290,7 +298,7 @@ partial fn pub_zmtp_accept_loop(
             Err(e) => {
                 if !is_transient_accept_error(e) {
                     tcp_close_listener(listener);
-                    return Ok(())
+                    return Ok(());
                 }
             },
             Ok(stream) => {
@@ -312,7 +320,7 @@ pub partial fn pub_serve_zmtp(
     publisher: fn(TcpStream) -> Result[Unit, ZmqError],
 ) -> Result[Unit, ZmqError] ! Net {
     match zmq_bind(addr) {
-        Err(e)       => Err(e),
+        Err(e) => Err(e),
         Ok(listener) => pub_zmtp_accept_loop(listener, publisher),
     }
 }
