@@ -23,13 +23,6 @@ use std.net.{TcpListener, TcpStream, NetError,
              tcp_accept, tcp_read, tcp_connect,
              tcp_close_listener, tcp_close_stream}
 
-use pkg.zmq.{ZmqError, encode_frame, decode_frame, map_net_err,
-             zmq_bind, send_one, is_transient_accept_error}
-
-use pkg.zmq.zmtp.{ZmtpSocketType, zmtp_handshake_server, zmtp_handshake_client,
-                   zmtp_recv_message, zmtp_send_body, zmtp_send_subscribe,
-                   zmtp_recv_subscribe}
-
 // ── Publisher actor ───────────────────────────────────────────────────────────
 /// Publisher actor.  Maintains a list of subscriber addresses ("host:port").
 ///

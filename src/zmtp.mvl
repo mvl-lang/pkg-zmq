@@ -19,7 +19,6 @@ use std.ifc.{Tainted}
 
 use std.net.{TcpStream, NetError, tcp_read_exact, tcp_write}
 
-use pkg.zmq.{ZmqError, map_net_err}
 
 // ── Socket types ─────────────────────────────────────────────────────────────
 /// ZMTP socket types for the READY command metadata.
